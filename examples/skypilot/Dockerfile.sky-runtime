@@ -2,16 +2,8 @@ FROM nvcr.io/nvidia/nemo-rl:v0.6.0
 
 USER root
 
-# Older SkyPilot API servers create this environment without setuptools, then
-# fail while patching Ray 2.9.3 because Ray imports pkg_resources. Pre-creating
-# the path makes the old bootstrap reuse a compatible seeded environment.
-RUN uv venv --seed /root/skypilot-runtime --python 3.10 && \
-    env -u PYTHONPATH \
-        -u PIP_CONSTRAINT \
-        -u PIP_BUILD_CONSTRAINT \
-        /root/skypilot-runtime/bin/python -m pip install \
-        --force-reinstall \
-        --no-deps \
-        "setuptools==69.5.1" && \
-    env -u PYTHONPATH /root/skypilot-runtime/bin/python -c \
-        "import importlib.metadata as m; import pkg_resources; assert m.version('setuptools') == '69.5.1'"
+# SkyPilot's bootstrap runs before task-level pod overrides are applied. Keep
+# its uv invocations from loading NeMo-RL's setuptools>=80 project override.
+ENV UV_NO_CONFIG=1
+
+WORKDIR /root

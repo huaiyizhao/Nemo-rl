@@ -1,29 +1,25 @@
 name: nemo-rl-qwen3-5-9b-1n8g
 
-# Launch this file from the NeMo-RL repository root:
-#   sky launch -c nemo-rl-qwen35 \
-#     examples/skypilot/nemo-rl-qwen3.5-9b-1n8g.yaml -y
+# This file is self-contained: the launch machine does not need a NeMo-RL
+# checkout. Start it from any directory with:
+#   sky launch -c nemo-rl-qwen35 nemo-rl-qwen3.5-9b-1n8g.yaml -y
 resources:
   accelerators: H200:8
   cpus: 64+
   memory: 256+
   # Derived from the NeMo-RL v0.6.0 image with a SkyPilot 0.11 runtime fix.
-  image_id: docker:028236335745.dkr.ecr.us-east-2.amazonaws.com/galileo/nemo:v0.6
+  image_id: docker:028236335745.dkr.ecr.us-east-2.amazonaws.com/galileo/nemo:v0.6-skyfix
 
 num_nodes: 1
 
-# Sync this fork onto the instance. The release-matched source and prebuilt
-# environments from the image remain available under /opt/nemo-rl.
-workdir: .
-
 setup: |
   set -euo pipefail
-  test -d /opt/nemo-rl
-  test -f /opt/nemo-rl/tests/test_suites/llm/grpo-qwen3.5-9b-1n8g-megatron.sh
-  nvidia-smi
+  test -d /root/Nemo-rl/.git || \
+    git clone --branch local --single-branch \
+      https://github.com/huaiyizhao/Nemo-rl.git /root/Nemo-rl
 
 run: |
   set -euo pipefail
-  echo "NeMo-RL node is ready. Connect with: ssh <cluster-name>"
-  echo "Official image source: /opt/nemo-rl"
-  echo "Synced fork workdir: ${PWD}"
+  echo "NeMo-RL node is ready. Connect with: sky ssh <cluster-name>"
+  echo "Fork checkout: /root/Nemo-rl (branch: local)"
+  echo "Smoke test: bash /root/Nemo-rl/examples/skypilot/run-qwen35-smoke.sh"
