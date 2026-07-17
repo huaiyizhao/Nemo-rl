@@ -3,6 +3,8 @@ set -euo pipefail
 
 NEMO_ROOT=${NEMO_ROOT:-/opt/nemo-rl}
 NEMO_PYTHON=/opt/nemo_rl_venv/bin/python
+NEMO_RAY=/opt/nemo_rl_venv/bin/ray
+NEMO_RAY_ADDRESS=127.0.0.1:1200
 
 # Ray opens many gRPC channels. Match NeMo-RL's official ray.sub launcher.
 hard_nofile=$(ulimit -Hn)
@@ -17,9 +19,13 @@ unset UV_NO_CONFIG
 unset NRL_IGNORE_VERSION_MISMATCH
 export UV_PROJECT_ENVIRONMENT=/opt/nemo_rl_venv
 export PYTHONPATH="${NEMO_ROOT}:${PYTHONPATH:-}"
-# Ray treats this value specially: ray.init(address="auto") starts a fresh
-# local cluster even when SkyPilot's Ray cluster is already running.
-export RAY_ADDRESS=local
+export RAY_ADDRESS="${NEMO_RAY_ADDRESS}"
+
+if ! "${NEMO_RAY}" status --address="${NEMO_RAY_ADDRESS}" >/dev/null 2>&1; then
+  echo "ERROR: NeMo Ray is not running at ${NEMO_RAY_ADDRESS}." >&2
+  echo "Run /root/Nemo-rl/examples/skypilot/start-nemo-ray.sh first." >&2
+  exit 1
+fi
 
 cd "${NEMO_ROOT}"
 echo "nofile soft limit: $(ulimit -Sn)"

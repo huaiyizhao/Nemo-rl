@@ -17,6 +17,7 @@ setup: |
   test -d /root/Nemo-rl/.git || \
     git clone --branch local --single-branch \
       https://github.com/huaiyizhao/Nemo-rl.git /root/Nemo-rl
+  bash /root/Nemo-rl/examples/skypilot/start-nemo-ray.sh
 
 run: |
   set -euo pipefail
