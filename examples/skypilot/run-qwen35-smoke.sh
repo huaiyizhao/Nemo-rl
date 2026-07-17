@@ -29,10 +29,30 @@ fi
 
 cd "${NEMO_ROOT}"
 echo "nofile soft limit: $(ulimit -Sn)"
+echo "Mode: async GRPO (4 training GPUs + 4 rollout GPUs)"
 exec "${NEMO_PYTHON}" examples/run_grpo.py \
   --config "${NEMO_ROOT}/examples/configs/recipes/llm/grpo-qwen3.5-9b-1n8g-megatron.yaml" \
-  grpo.max_num_steps=1 \
+  cluster.num_nodes=1 \
+  grpo.max_num_steps=2 \
   grpo.val_period=-1 \
+  grpo.num_prompts_per_step=2 \
+  grpo.num_generations_per_prompt=4 \
+  policy.train_global_batch_size=8 \
+  policy.max_total_sequence_length=2048 \
+  data.max_input_seq_length=1024 \
+  policy.generation.max_new_tokens=1024 \
+  policy.generation.colocated.enabled=false \
+  policy.generation.colocated.resources.num_nodes=1 \
+  policy.generation.colocated.resources.gpus_per_node=4 \
+  policy.generation.vllm_cfg.async_engine=true \
+  grpo.async_grpo.enabled=true \
+  grpo.async_grpo.max_trajectory_age_steps=1 \
+  grpo.async_grpo.in_flight_weight_updates=true \
+  loss_fn.use_importance_sampling_correction=true \
+  loss_fn.force_on_policy_ratio=true \
+  loss_fn.truncated_importance_sampling_type=tis \
+  loss_fn.truncated_importance_sampling_ratio=2 \
+  'policy.tokenizer.chat_template_kwargs={enable_thinking:false}' \
   logger.wandb_enabled=false \
   checkpointing.enabled=false \
   "$@"
