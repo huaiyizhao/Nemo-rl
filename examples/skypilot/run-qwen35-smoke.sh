@@ -38,6 +38,7 @@ exec "${NEMO_PYTHON}" examples/run_grpo.py \
   grpo.num_prompts_per_step=2 \
   grpo.num_generations_per_prompt=4 \
   policy.train_global_batch_size=8 \
+  policy.make_sequence_length_divisible_by=4 \
   policy.max_total_sequence_length=2048 \
   data.max_input_seq_length=1024 \
   policy.generation.max_new_tokens=1024 \
