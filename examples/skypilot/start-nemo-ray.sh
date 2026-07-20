@@ -3,6 +3,24 @@ set -euo pipefail
 
 NEMO_RAY=/opt/nemo_rl_venv/bin/ray
 NEMO_RAY_ADDRESS=127.0.0.1:1200
+NEMO_STORAGE_ROOT=${NEMO_STORAGE_ROOT:-/host-ssd/nemo-rl}
+NEMO_RAY_TEMP_DIR=${NEMO_RAY_TEMP_DIR:-${NEMO_STORAGE_ROOT}/ray}
+NEMO_RAY_SPILL_DIR=${NEMO_RAY_SPILL_DIR:-${NEMO_STORAGE_ROOT}/ray-spill}
+
+if [[ ! -d /host-ssd || ! -w /host-ssd ]]; then
+  echo "ERROR: /host-ssd must be an existing writable volume mount." >&2
+  exit 1
+fi
+
+mkdir -p \
+  "${NEMO_RAY_TEMP_DIR}" \
+  "${NEMO_RAY_SPILL_DIR}" \
+  "${NEMO_STORAGE_ROOT}/tmp" \
+  "${NEMO_STORAGE_ROOT}/cache"
+
+export TMPDIR="${NEMO_STORAGE_ROOT}/tmp"
+export XDG_CACHE_HOME="${NEMO_STORAGE_ROOT}/cache"
+export UV_CACHE_DIR="${NEMO_STORAGE_ROOT}/cache/uv"
 
 if "${NEMO_RAY}" status --address="${NEMO_RAY_ADDRESS}" >/dev/null 2>&1; then
   echo "NeMo Ray is already running at ${NEMO_RAY_ADDRESS}"
@@ -36,6 +54,7 @@ node_ip=$(hostname -i | awk '{print $1}')
   --metrics-export-port=1310 \
   --dashboard-agent-listen-port=1312 \
   --num-gpus=8 \
-  --temp-dir=/tmp/ray_nemo
+  --temp-dir="${NEMO_RAY_TEMP_DIR}" \
+  --object-spilling-directory="${NEMO_RAY_SPILL_DIR}"
 
 "${NEMO_RAY}" status --address="${NEMO_RAY_ADDRESS}"

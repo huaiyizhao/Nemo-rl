@@ -14,6 +14,8 @@ num_nodes: 1
 
 setup: |
   set -euo pipefail
+  test -d /host-ssd
+  test -w /host-ssd
   test -d /root/Nemo-rl/.git || \
     git clone --branch local --single-branch \
       https://github.com/huaiyizhao/Nemo-rl.git /root/Nemo-rl
