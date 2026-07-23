@@ -6,7 +6,9 @@ set -euo pipefail
 # eight GPUs and execute synchronously. Each outer step collects 2048
 # trajectories, then trains them as four global batches of 512 trajectories.
 
-NEMO_ROOT=/root/Nemo-rl
+NEMO_ROOT=/opt/nemo-rl
+NEMO_PYTHON=/opt/nemo_rl_venv/bin/python
+NEMO_RAY=/opt/nemo_rl_venv/bin/ray
 NEMO_RAY_ADDRESS=127.0.0.1:1200
 NEMO_STORAGE_ROOT=${NEMO_STORAGE_ROOT:-/host-ssd/nemo-rl}
 RUN_NAME=${RUN_NAME:-qwen35-9b-colocated-convergence-$(date -u +%Y%m%d-%H%M%S)}
@@ -20,8 +22,8 @@ if [[ ! -d /host-ssd || ! -w /host-ssd ]]; then
   exit 1
 fi
 
-if ! command -v uv >/dev/null 2>&1; then
-  echo "ERROR: uv is required but was not found in PATH." >&2
+if [[ ! -x "${NEMO_PYTHON}" || ! -x "${NEMO_RAY}" ]]; then
+  echo "ERROR: NeMo-RL container environment is incomplete under /opt." >&2
   exit 1
 fi
 
@@ -55,9 +57,7 @@ else
   exit 1
 fi
 
-unset UV_NO_CONFIG
-export UV_PROJECT_ENVIRONMENT="${NEMO_STORAGE_ROOT}/venvs/driver"
-export NEMO_RL_VENV_DIR="${NEMO_STORAGE_ROOT}/venvs/workers"
+export NEMO_RL_VENV_DIR=/opt/ray_venvs
 export PYTHONPATH="${NEMO_ROOT}:${PYTHONPATH:-}"
 export RAY_ADDRESS="${NEMO_RAY_ADDRESS}"
 export TMPDIR="${NEMO_STORAGE_ROOT}/tmp"
@@ -71,7 +71,7 @@ export WANDB_CACHE_DIR="${NEMO_WANDB_CACHE_DIR:-${NEMO_STORAGE_ROOT}/wandb/cache
 export WANDB_DATA_DIR="${NEMO_WANDB_DATA_DIR:-${NEMO_STORAGE_ROOT}/wandb/data}"
 
 cd "${NEMO_ROOT}"
-if ! uv run --locked ray status --address="${NEMO_RAY_ADDRESS}" >/dev/null 2>&1; then
+if ! "${NEMO_RAY}" status --address="${NEMO_RAY_ADDRESS}" >/dev/null 2>&1; then
   echo "ERROR: NeMo Ray is not running at ${NEMO_RAY_ADDRESS}." >&2
   echo "Run /root/Nemo-rl/examples/skypilot/start-nemo-ray.sh first." >&2
   exit 1
@@ -86,7 +86,7 @@ echo "Train batch: global = 512; train/logprob micro = 8; grad accumulation = 16
 echo "Validation: step 0, every ${VAL_PERIOD} steps, and final step"
 echo "Max steps: ${MAX_STEPS}"
 echo "Storage: ${NEMO_STORAGE_ROOT}"
-exec uv run --locked examples/run_grpo.py \
+exec "${NEMO_PYTHON}" examples/run_grpo.py \
   --config "${NEMO_ROOT}/examples/configs/recipes/llm/grpo-qwen3.5-9b-1n8g-megatron.yaml" \
   cluster.num_nodes=1 \
   grpo.max_num_steps="${MAX_STEPS}" \

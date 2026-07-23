@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-NEMO_ROOT=/root/Nemo-rl
+NEMO_ROOT=/opt/nemo-rl
+NEMO_PYTHON=/opt/nemo_rl_venv/bin/python
+NEMO_RAY=/opt/nemo_rl_venv/bin/ray
 NEMO_RAY_ADDRESS=${NEMO_RAY_ADDRESS:-127.0.0.1:1200}
 NEMO_STORAGE_ROOT=${NEMO_STORAGE_ROOT:-/host-ssd/nemo-rl}
 
@@ -24,8 +26,8 @@ if [[ ! -d /host-ssd || ! -w /host-ssd ]]; then
   exit 1
 fi
 
-if ! command -v uv >/dev/null 2>&1; then
-  echo "ERROR: uv is required but was not found in PATH." >&2
+if [[ ! -x "${NEMO_PYTHON}" || ! -x "${NEMO_RAY}" ]]; then
+  echo "ERROR: NeMo-RL container environment is incomplete under /opt." >&2
   exit 1
 fi
 
@@ -56,9 +58,7 @@ else
   exit 1
 fi
 
-unset UV_NO_CONFIG
-export UV_PROJECT_ENVIRONMENT="${NEMO_STORAGE_ROOT}/venvs/driver"
-export NEMO_RL_VENV_DIR="${NEMO_STORAGE_ROOT}/venvs/workers"
+export NEMO_RL_VENV_DIR=/opt/ray_venvs
 export PYTHONPATH="${NEMO_ROOT}:${PYTHONPATH:-}"
 export RAY_ADDRESS="${NEMO_RAY_ADDRESS}"
 export WANDB_MODE=online
@@ -73,7 +73,7 @@ export WANDB_CACHE_DIR="${NEMO_WANDB_CACHE_DIR:-${NEMO_STORAGE_ROOT}/wandb/cache
 export WANDB_DATA_DIR="${NEMO_WANDB_DATA_DIR:-${NEMO_STORAGE_ROOT}/wandb/data}"
 
 cd "${NEMO_ROOT}"
-if ! uv run --locked ray status --address="${NEMO_RAY_ADDRESS}" >/dev/null 2>&1; then
+if ! "${NEMO_RAY}" status --address="${NEMO_RAY_ADDRESS}" >/dev/null 2>&1; then
   echo "ERROR: NeMo Ray is not running at ${NEMO_RAY_ADDRESS}." >&2
   echo "Run /root/Nemo-rl/examples/skypilot/start-nemo-ray.sh first." >&2
   exit 1
@@ -94,7 +94,7 @@ echo "Ray: ${RAY_ADDRESS}"
 echo "Logs: ${LOG_DIR}"
 echo "Storage: ${NEMO_STORAGE_ROOT}"
 
-exec uv run --locked examples/run_vlm_grpo.py \
+exec "${NEMO_PYTHON}" examples/run_vlm_grpo.py \
   --config "${NEMO_ROOT}/examples/configs/recipes/vlm/vlm_grpo-qwen3.5-35ba3b-geo3k-2n8g-automodel-ep16.yaml" \
   cluster.num_nodes=1 \
   policy.dtensor_cfg.expert_parallel_size=8 \

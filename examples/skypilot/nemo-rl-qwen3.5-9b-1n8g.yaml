@@ -17,17 +17,17 @@ setup: |
   test -d /host-ssd
   test -w /host-ssd
   test -d /root/Nemo-rl/.git || \
-    git clone --branch local --single-branch --recurse-submodules \
+    git clone --branch local --single-branch \
       https://github.com/huaiyizhao/Nemo-rl.git /root/Nemo-rl
-  cd /root/Nemo-rl
-  git submodule update --init --recursive
+  bash /root/Nemo-rl/examples/skypilot/apply-container-v060-mfu.sh
   bash /root/Nemo-rl/examples/skypilot/start-nemo-ray.sh
 
 run: |
   set -euo pipefail
   echo "NeMo-RL node is ready. Connect with: sky ssh <cluster-name>"
-  echo "Fork checkout: /root/Nemo-rl (branch: local)"
-  echo "Environments: managed automatically by uv/NeMo-RL"
+  echo "Runtime code: /opt/nemo-rl (container v0.6.0 + MFU patch)"
+  echo "Runtime environments: /opt/nemo_rl_venv and /opt/ray_venvs"
+  echo "Launch helpers: /root/Nemo-rl/examples/skypilot"
   echo "Smoke test: bash /root/Nemo-rl/examples/skypilot/run-qwen35-smoke.sh"
   echo "Colocated convergence probe: bash /root/Nemo-rl/examples/skypilot/run-qwen35-colocated-convergence.sh"
   echo "VLM GRPO: bash /root/Nemo-rl/examples/skypilot/run-vlm-grpo-qwen35-geo3k.sh"

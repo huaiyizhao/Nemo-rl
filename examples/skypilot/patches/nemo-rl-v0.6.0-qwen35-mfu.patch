@@ -1,0 +1,144 @@
+diff --git a/nemo_rl/algorithms/utils.py b/nemo_rl/algorithms/utils.py
+index f46b49ac..c155354a 100644
+--- a/nemo_rl/algorithms/utils.py
++++ b/nemo_rl/algorithms/utils.py
+@@ -774,10 +774,17 @@ def print_performance_metrics(
+     # FLOPS
+     # =====================================================
+ 
+-    if "total_flops" in train_results:
+-        total_tflops = (
+-            train_results["total_flops"] / timing_metrics["policy_training"] / 1e12
++    packing_enabled = master_config.policy.get("sequence_packing", {}).get(
++        "enabled", False
++    )
++    if "total_flops" in train_results and not packing_enabled:
++        # Prefer the CUDA-synchronized elapsed time recorded inside the Megatron worker
++        # over the driver-side policy_training timer, which returns as soon as the Ray
++        # future is submitted and can be much shorter than actual GPU compute time.
++        train_elapsed_seconds = train_results.get(
++            "train_elapsed_seconds", timing_metrics["policy_training"]
+         )
++        total_tflops = train_results["total_flops"] / train_elapsed_seconds / 1e12
+         num_ranks = train_results["num_ranks"]
+         print(
+             f"  • Training FLOPS: {total_tflops:.2f} TFLOPS ({total_tflops / num_ranks:.2f} TFLOPS per rank)",
+diff --git a/nemo_rl/models/policy/lm_policy.py b/nemo_rl/models/policy/lm_policy.py
+index 8acd808b..f82cac9f 100644
+--- a/nemo_rl/models/policy/lm_policy.py
++++ b/nemo_rl/models/policy/lm_policy.py
+@@ -57,6 +57,28 @@ from nemo_rl.utils.timer import Timer
+ PathLike = Union[str, "os.PathLike[Any]"]
+ 
+ 
++def _aggregate_megatron_flops_metrics(
++    results: list[dict],
++    world_size: int,
++) -> dict:
++    """Aggregate FLOPS metrics from Megatron worker results.
++
++    Called when the Megatron worker returns total_flops directly (no FLOPTracker).
++    """
++    aggregated: dict = {}
++    aggregated["total_flops"] = results[0]["total_flops"]
++    aggregated["num_ranks"] = results[0].get("num_ranks", world_size)
++    if "train_elapsed_seconds" in results[0]:
++        aggregated["train_elapsed_seconds"] = results[0]["train_elapsed_seconds"]
++    try:
++        aggregated["theoretical_tflops"] = aggregated[
++            "num_ranks"
++        ] * get_theoretical_tflops(results[0]["gpu_name"], results[0]["model_dtype"])
++    except Exception as e:
++        warnings.warn(f"Error getting theoretical flops: {e}")
++    return aggregated
++
++
+ class Policy(ColocatablePolicyInterface, GenerationInterface):
+     def __init__(
+         self,
+@@ -676,6 +698,12 @@ class Policy(ColocatablePolicyInterface, GenerationInterface):
+                 )
+             except Exception as e:
+                 warnings.warn(f"Error getting theoretical flops: {e}")
++        elif results and "total_flops" in results[0]:
++            aggregated_results.update(
++                _aggregate_megatron_flops_metrics(
++                    results, self.worker_group.cluster.world_size()
++                )
++            )
+ 
+         # Aggregate metrics across all workers
+         all_mb_metrics = defaultdict(list)
+diff --git a/nemo_rl/models/policy/workers/megatron_policy_worker.py b/nemo_rl/models/policy/workers/megatron_policy_worker.py
+index 8df5e1f1..07a80a09 100644
+--- a/nemo_rl/models/policy/workers/megatron_policy_worker.py
++++ b/nemo_rl/models/policy/workers/megatron_policy_worker.py
+@@ -14,6 +14,7 @@
+ import gc
+ import os
+ import re
++import time
+ import warnings
+ from collections import defaultdict
+ from contextlib import AbstractContextManager, contextmanager, nullcontext
+@@ -280,6 +281,10 @@ class MegatronPolicyWorkerImpl(AbstractPolicyWorker, ColocatablePolicyInterface)
+             # Ensure model is in training mode
+             self.model.train()
+ 
++        torch.distributed.barrier()  # pragma: no cover
++        torch.cuda.synchronize()  # pragma: no cover
++        train_t0 = time.perf_counter()  # pragma: no cover
++
+         with ctx:
+             all_mb_metrics = []
+             losses = []
+@@ -412,6 +417,10 @@ class MegatronPolicyWorkerImpl(AbstractPolicyWorker, ColocatablePolicyInterface)
+                 all_mb_metrics.extend(gb_loss_metrics)
+                 losses.append(torch.tensor(mb_losses).sum().item())
+ 
++        torch.distributed.barrier()  # pragma: no cover
++        torch.cuda.synchronize()  # pragma: no cover
++        train_elapsed_seconds = time.perf_counter() - train_t0  # pragma: no cover
++
+         if not eval_mode:
+             # take one LR step every rollout batch
+             # we need to scale the step by gbs to counteract the fact that NeMo automatically
+@@ -432,6 +441,7 @@ class MegatronPolicyWorkerImpl(AbstractPolicyWorker, ColocatablePolicyInterface)
+             "model_dtype": self.dtype,
+             "all_mb_metrics": mb_metrics,
+             "grad_norm": torch.tensor([grad_norm]),
++            "train_elapsed_seconds": train_elapsed_seconds,  # pragma: no cover
+         }
+         # Collect MoE aux metrics averaged across microbatches
+         num_moe_experts = getattr(self.model.config, "num_moe_experts", None)
+@@ -443,6 +453,30 @@ class MegatronPolicyWorkerImpl(AbstractPolicyWorker, ColocatablePolicyInterface)
+             )
+             if moe_metrics:
+                 metrics["moe_metrics"] = moe_metrics
++
++        # The HF FLOPTracker does not recognize Qwen3.5. Megatron-Bridge's
++        # model-aware estimator does, and uses the actual training sequence length.
++        if not self.cfg.get("sequence_packing", {}).get("enabled", False):
++            try:  # pragma: no cover
++                from megatron.bridge.training.utils import flop_utils
++
++                original_seq_length = self.mcore_state.cfg.model.seq_length
++                self.mcore_state.cfg.model.seq_length = self.cfg[
++                    "max_total_sequence_length"
++                ]
++                try:
++                    flops_per_sample = flop_utils.num_floating_point_operations(
++                        self.mcore_state.cfg, batch_size=1
++                    )
++                finally:
++                    self.mcore_state.cfg.model.seq_length = original_seq_length
++
++                metrics["total_flops"] = (
++                    flops_per_sample * gbs * num_global_batches
++                )
++                metrics["num_ranks"] = torch.distributed.get_world_size()
++            except Exception as e:
++                warnings.warn(f"Failed to compute FLOPs for MFU reporting: {e}")
+         return metrics
+ 
+     @wrap_with_nvtx_name("megatron_policy_worker/get_logprobs")
