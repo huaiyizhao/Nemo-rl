@@ -3,8 +3,8 @@ set -euo pipefail
 
 # Convergence probe based on NeMo-RL's Qwen3.5-9B 1n8g test-suite recipe.
 # Unlike run-qwen35-smoke.sh, policy training and vLLM generation share all
-# eight GPUs and execute synchronously. The official recipe batch is retained:
-# 32 prompts * 16 generations = 512 trajectories per optimizer step.
+# eight GPUs and execute synchronously. Each outer step collects 2048
+# trajectories, then trains them as eight global batches of 256 trajectories.
 
 NEMO_ROOT=${NEMO_ROOT:-/opt/nemo-rl}
 NEMO_PYTHON=/opt/nemo_rl_venv/bin/python
@@ -76,7 +76,8 @@ fi
 cd "${NEMO_ROOT}"
 echo "nofile soft limit: $(ulimit -Sn)"
 echo "Mode: synchronous colocated GRPO (8 shared GPUs)"
-echo "Batch: 32 prompts x 16 generations = 512 trajectories/step"
+echo "Rollout batch: 128 prompts x 16 generations = 2048 trajectories/outer step"
+echo "Train batch: global = 256; train/logprob micro = 32; optimizer updates/outer step = 8"
 echo "Validation: step 0, every ${VAL_PERIOD} steps, and final step"
 echo "Max steps: ${MAX_STEPS}"
 echo "Storage: ${NEMO_STORAGE_ROOT}"
@@ -87,10 +88,19 @@ exec "${NEMO_PYTHON}" examples/run_grpo.py \
   grpo.val_period="${VAL_PERIOD}" \
   grpo.val_at_start=true \
   grpo.val_at_end=true \
+  grpo.num_prompts_per_step=128 \
+  grpo.num_generations_per_prompt=16 \
   grpo.async_grpo.enabled=false \
   policy.generation.colocated.enabled=true \
   policy.generation.vllm_cfg.async_engine=false \
   policy.generation.vllm_cfg.enforce_eager=true \
+  policy.generation.vllm_cfg.gpu_memory_utilization=0.8 \
+  policy.train_global_batch_size=256 \
+  policy.train_micro_batch_size=32 \
+  policy.logprob_batch_size=32 \
+  policy.megatron_cfg.optimizer.lr=1.0e-6 \
+  policy.megatron_cfg.optimizer.min_lr=1.0e-7 \
+  loss_fn.force_on_policy_ratio=false \
   logger.log_dir="${LOG_DIR}" \
   logger.wandb_enabled=true \
   logger.tensorboard_enabled=true \
