@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-NEMO_ROOT=${NEMO_ROOT:-/opt/nemo-rl}
-NEMO_PYTHON=/opt/nemo_rl_venv/bin/python
-NEMO_RAY=/opt/nemo_rl_venv/bin/ray
+NEMO_ROOT=/root/Nemo-rl
 NEMO_RAY_ADDRESS=${NEMO_RAY_ADDRESS:-127.0.0.1:1200}
 NEMO_STORAGE_ROOT=${NEMO_STORAGE_ROOT:-/host-ssd/nemo-rl}
 
@@ -23,6 +21,11 @@ CHECKPOINTING_ENABLED=${CHECKPOINTING_ENABLED:-false}
 
 if [[ ! -d /host-ssd || ! -w /host-ssd ]]; then
   echo "ERROR: /host-ssd must be an existing writable volume mount." >&2
+  exit 1
+fi
+
+if ! command -v uv >/dev/null 2>&1; then
+  echo "ERROR: uv is required but was not found in PATH." >&2
   exit 1
 fi
 
@@ -54,8 +57,8 @@ else
 fi
 
 unset UV_NO_CONFIG
-unset NRL_IGNORE_VERSION_MISMATCH
-export UV_PROJECT_ENVIRONMENT=/opt/nemo_rl_venv
+export UV_PROJECT_ENVIRONMENT="${NEMO_STORAGE_ROOT}/venvs/driver"
+export NEMO_RL_VENV_DIR="${NEMO_STORAGE_ROOT}/venvs/workers"
 export PYTHONPATH="${NEMO_ROOT}:${PYTHONPATH:-}"
 export RAY_ADDRESS="${NEMO_RAY_ADDRESS}"
 export WANDB_MODE=online
@@ -69,7 +72,8 @@ export VLLM_CACHE_ROOT="${NEMO_VLLM_CACHE_ROOT:-${NEMO_STORAGE_ROOT}/vllm}"
 export WANDB_CACHE_DIR="${NEMO_WANDB_CACHE_DIR:-${NEMO_STORAGE_ROOT}/wandb/cache}"
 export WANDB_DATA_DIR="${NEMO_WANDB_DATA_DIR:-${NEMO_STORAGE_ROOT}/wandb/data}"
 
-if ! "${NEMO_RAY}" status --address="${NEMO_RAY_ADDRESS}" >/dev/null 2>&1; then
+cd "${NEMO_ROOT}"
+if ! uv run --locked ray status --address="${NEMO_RAY_ADDRESS}" >/dev/null 2>&1; then
   echo "ERROR: NeMo Ray is not running at ${NEMO_RAY_ADDRESS}." >&2
   echo "Run /root/Nemo-rl/examples/skypilot/start-nemo-ray.sh first." >&2
   exit 1
@@ -80,7 +84,6 @@ if [[ "${CHECKPOINTING_ENABLED}" == true ]]; then
   mkdir -p "${CHECKPOINT_DIR}"
 fi
 
-cd "${NEMO_ROOT}"
 echo "Model: Qwen/Qwen3.5-35B-A3B-Base"
 echo "Dataset: geometry3k"
 echo "Topology: 1 node, 8 H200, Automodel EP8 (official recipe is 2 nodes EP16)"
@@ -91,7 +94,7 @@ echo "Ray: ${RAY_ADDRESS}"
 echo "Logs: ${LOG_DIR}"
 echo "Storage: ${NEMO_STORAGE_ROOT}"
 
-exec "${NEMO_PYTHON}" examples/run_vlm_grpo.py \
+exec uv run --locked examples/run_vlm_grpo.py \
   --config "${NEMO_ROOT}/examples/configs/recipes/vlm/vlm_grpo-qwen3.5-35ba3b-geo3k-2n8g-automodel-ep16.yaml" \
   cluster.num_nodes=1 \
   policy.dtensor_cfg.expert_parallel_size=8 \

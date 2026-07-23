@@ -7,8 +7,6 @@ set -euo pipefail
 # trajectories, then trains them as four global batches of 512 trajectories.
 
 NEMO_ROOT=/root/Nemo-rl
-NEMO_PYTHON=/opt/nemo_rl_venv/bin/python
-NEMO_RAY=/opt/nemo_rl_venv/bin/ray
 NEMO_RAY_ADDRESS=127.0.0.1:1200
 NEMO_STORAGE_ROOT=${NEMO_STORAGE_ROOT:-/host-ssd/nemo-rl}
 RUN_NAME=${RUN_NAME:-qwen35-9b-colocated-convergence-$(date -u +%Y%m%d-%H%M%S)}
@@ -19,6 +17,11 @@ CHECKPOINT_DIR=${CHECKPOINT_DIR:-${NEMO_STORAGE_ROOT}/results/${RUN_NAME}/checkp
 
 if [[ ! -d /host-ssd || ! -w /host-ssd ]]; then
   echo "ERROR: /host-ssd must be an existing writable volume mount." >&2
+  exit 1
+fi
+
+if ! command -v uv >/dev/null 2>&1; then
+  echo "ERROR: uv is required but was not found in PATH." >&2
   exit 1
 fi
 
@@ -53,8 +56,8 @@ else
 fi
 
 unset UV_NO_CONFIG
-unset NRL_IGNORE_VERSION_MISMATCH
-export UV_PROJECT_ENVIRONMENT=/opt/nemo_rl_venv
+export UV_PROJECT_ENVIRONMENT="${NEMO_STORAGE_ROOT}/venvs/driver"
+export NEMO_RL_VENV_DIR="${NEMO_STORAGE_ROOT}/venvs/workers"
 export PYTHONPATH="${NEMO_ROOT}:${PYTHONPATH:-}"
 export RAY_ADDRESS="${NEMO_RAY_ADDRESS}"
 export TMPDIR="${NEMO_STORAGE_ROOT}/tmp"
@@ -67,13 +70,13 @@ export VLLM_CACHE_ROOT="${NEMO_VLLM_CACHE_ROOT:-${NEMO_STORAGE_ROOT}/vllm}"
 export WANDB_CACHE_DIR="${NEMO_WANDB_CACHE_DIR:-${NEMO_STORAGE_ROOT}/wandb/cache}"
 export WANDB_DATA_DIR="${NEMO_WANDB_DATA_DIR:-${NEMO_STORAGE_ROOT}/wandb/data}"
 
-if ! "${NEMO_RAY}" status --address="${NEMO_RAY_ADDRESS}" >/dev/null 2>&1; then
+cd "${NEMO_ROOT}"
+if ! uv run --locked ray status --address="${NEMO_RAY_ADDRESS}" >/dev/null 2>&1; then
   echo "ERROR: NeMo Ray is not running at ${NEMO_RAY_ADDRESS}." >&2
   echo "Run /root/Nemo-rl/examples/skypilot/start-nemo-ray.sh first." >&2
   exit 1
 fi
 
-cd "${NEMO_ROOT}"
 echo "nofile soft limit: $(ulimit -Sn)"
 echo "Code root: ${NEMO_ROOT}"
 echo "Mode: synchronous colocated GRPO (8 shared GPUs)"
@@ -83,7 +86,7 @@ echo "Train batch: global = 512; train/logprob micro = 8; grad accumulation = 16
 echo "Validation: step 0, every ${VAL_PERIOD} steps, and final step"
 echo "Max steps: ${MAX_STEPS}"
 echo "Storage: ${NEMO_STORAGE_ROOT}"
-exec "${NEMO_PYTHON}" examples/run_grpo.py \
+exec uv run --locked examples/run_grpo.py \
   --config "${NEMO_ROOT}/examples/configs/recipes/llm/grpo-qwen3.5-9b-1n8g-megatron.yaml" \
   cluster.num_nodes=1 \
   grpo.max_num_steps="${MAX_STEPS}" \

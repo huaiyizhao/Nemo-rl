@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-NEMO_RAY=/opt/nemo_rl_venv/bin/ray
-NEMO_RAY_ADDRESS=127.0.0.1:1200
+NEMO_ROOT=/root/Nemo-rl
+NEMO_RAY_ADDRESS=${NEMO_RAY_ADDRESS:-127.0.0.1:1200}
 NEMO_STORAGE_ROOT=${NEMO_STORAGE_ROOT:-/host-ssd/nemo-rl}
 NEMO_RAY_TEMP_DIR=${NEMO_RAY_TEMP_DIR:-${NEMO_STORAGE_ROOT}/ray}
 NEMO_RAY_SPILL_DIR=${NEMO_RAY_SPILL_DIR:-${NEMO_STORAGE_ROOT}/ray-spill}
@@ -12,17 +12,35 @@ if [[ ! -d /host-ssd || ! -w /host-ssd ]]; then
   exit 1
 fi
 
+if [[ ! -d "${NEMO_ROOT}/.git" ]]; then
+  echo "ERROR: NeMo-RL checkout not found at ${NEMO_ROOT}." >&2
+  exit 1
+fi
+
+if ! command -v uv >/dev/null 2>&1; then
+  echo "ERROR: uv is required but was not found in PATH." >&2
+  exit 1
+fi
+
 mkdir -p \
   "${NEMO_RAY_TEMP_DIR}" \
   "${NEMO_RAY_SPILL_DIR}" \
   "${NEMO_STORAGE_ROOT}/tmp" \
-  "${NEMO_STORAGE_ROOT}/cache"
+  "${NEMO_STORAGE_ROOT}/cache" \
+  "${NEMO_STORAGE_ROOT}/venvs"
 
 export TMPDIR="${NEMO_STORAGE_ROOT}/tmp"
 export XDG_CACHE_HOME="${NEMO_STORAGE_ROOT}/cache"
 export UV_CACHE_DIR="${NEMO_STORAGE_ROOT}/cache/uv"
+export UV_PROJECT_ENVIRONMENT="${NEMO_STORAGE_ROOT}/venvs/driver"
+export NEMO_RL_VENV_DIR="${NEMO_STORAGE_ROOT}/venvs/workers"
+export PYTHONPATH="${NEMO_ROOT}:${PYTHONPATH:-}"
 
-if "${NEMO_RAY}" status --address="${NEMO_RAY_ADDRESS}" >/dev/null 2>&1; then
+cd "${NEMO_ROOT}"
+
+# `uv run` syncs the driver from this checkout. NeMo-RL creates its
+# backend-specific worker environments lazily under NEMO_RL_VENV_DIR.
+if uv run --locked ray status --address="${NEMO_RAY_ADDRESS}" >/dev/null 2>&1; then
   echo "NeMo Ray is already running at ${NEMO_RAY_ADDRESS}"
   exit 0
 fi
@@ -37,7 +55,7 @@ else
 fi
 
 node_ip=$(hostname -i | awk '{print $1}')
-"${NEMO_RAY}" start --head \
+uv run --locked ray start --head \
   --disable-usage-stats \
   --node-ip-address="${node_ip}" \
   --port=1200 \
@@ -57,4 +75,4 @@ node_ip=$(hostname -i | awk '{print $1}')
   --temp-dir="${NEMO_RAY_TEMP_DIR}" \
   --object-spilling-directory="${NEMO_RAY_SPILL_DIR}"
 
-"${NEMO_RAY}" status --address="${NEMO_RAY_ADDRESS}"
+uv run --locked ray status --address="${NEMO_RAY_ADDRESS}"
