@@ -4,9 +4,9 @@ set -euo pipefail
 # Convergence probe based on NeMo-RL's Qwen3.5-9B 1n8g test-suite recipe.
 # Unlike run-qwen35-smoke.sh, policy training and vLLM generation share all
 # eight GPUs and execute synchronously. Each outer step collects 2048
-# trajectories, then trains them as eight global batches of 256 trajectories.
+# trajectories, then trains them as four global batches of 512 trajectories.
 
-NEMO_ROOT=${NEMO_ROOT:-/opt/nemo-rl}
+NEMO_ROOT=/root/Nemo-rl
 NEMO_PYTHON=/opt/nemo_rl_venv/bin/python
 NEMO_RAY=/opt/nemo_rl_venv/bin/ray
 NEMO_RAY_ADDRESS=127.0.0.1:1200
@@ -75,9 +75,11 @@ fi
 
 cd "${NEMO_ROOT}"
 echo "nofile soft limit: $(ulimit -Sn)"
+echo "Code root: ${NEMO_ROOT}"
 echo "Mode: synchronous colocated GRPO (8 shared GPUs)"
+echo "Parallelism: policy TP=2, DP=4; vLLM TP=2 (4 replicas)"
 echo "Rollout batch: 128 prompts x 16 generations = 2048 trajectories/outer step"
-echo "Train batch: global = 256; train/logprob micro = 32; optimizer updates/outer step = 8"
+echo "Train batch: global = 512; train/logprob micro = 8; grad accumulation = 16; optimizer updates/outer step = 4"
 echo "Validation: step 0, every ${VAL_PERIOD} steps, and final step"
 echo "Max steps: ${MAX_STEPS}"
 echo "Storage: ${NEMO_STORAGE_ROOT}"
@@ -94,10 +96,13 @@ exec "${NEMO_PYTHON}" examples/run_grpo.py \
   policy.generation.colocated.enabled=true \
   policy.generation.vllm_cfg.async_engine=false \
   policy.generation.vllm_cfg.enforce_eager=true \
-  policy.generation.vllm_cfg.gpu_memory_utilization=0.8 \
-  policy.train_global_batch_size=256 \
-  policy.train_micro_batch_size=16 \
-  policy.logprob_batch_size=16 \
+  policy.generation.vllm_cfg.gpu_memory_utilization=0.85 \
+  policy.generation.vllm_cfg.tensor_parallel_size=2 \
+  policy.megatron_cfg.tensor_model_parallel_size=2 \
+  policy.make_sequence_length_divisible_by=2 \
+  policy.train_global_batch_size=512 \
+  policy.train_micro_batch_size=8 \
+  policy.logprob_batch_size=8 \
   policy.megatron_cfg.optimizer.lr=1.0e-6 \
   policy.megatron_cfg.optimizer.min_lr=1.0e-7 \
   loss_fn.force_on_policy_ratio=false \
