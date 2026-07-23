@@ -96,8 +96,8 @@ exec "${NEMO_PYTHON}" examples/run_grpo.py \
   policy.generation.vllm_cfg.enforce_eager=true \
   policy.generation.vllm_cfg.gpu_memory_utilization=0.8 \
   policy.train_global_batch_size=256 \
-  policy.train_micro_batch_size=32 \
-  policy.logprob_batch_size=32 \
+  policy.train_micro_batch_size=16 \
+  policy.logprob_batch_size=16 \
   policy.megatron_cfg.optimizer.lr=1.0e-6 \
   policy.megatron_cfg.optimizer.min_lr=1.0e-7 \
   loss_fn.force_on_policy_ratio=false \
