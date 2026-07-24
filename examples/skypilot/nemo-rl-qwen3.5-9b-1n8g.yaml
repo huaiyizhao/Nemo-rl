@@ -30,4 +30,5 @@ run: |
   echo "Launch helpers: /root/Nemo-rl/examples/skypilot"
   echo "Smoke test: bash /root/Nemo-rl/examples/skypilot/run-qwen35-smoke.sh"
   echo "Colocated convergence probe: bash /root/Nemo-rl/examples/skypilot/run-qwen35-colocated-convergence.sh"
+  echo "Async convergence probe: bash /root/Nemo-rl/examples/skypilot/run-qwen35-async-convergence.sh"
   echo "VLM GRPO: bash /root/Nemo-rl/examples/skypilot/run-vlm-grpo-qwen35-geo3k.sh"

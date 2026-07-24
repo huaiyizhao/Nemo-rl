@@ -1,0 +1,12 @@
+diff --git a/nemo_rl/algorithms/utils.py b/nemo_rl/algorithms/utils.py
+--- a/nemo_rl/algorithms/utils.py
++++ b/nemo_rl/algorithms/utils.py
+@@ -774,7 +774,7 @@ def print_performance_metrics(
+     # FLOPS
+     # =====================================================
+ 
+-    packing_enabled = master_config.policy.get("sequence_packing", {}).get(
++    packing_enabled = master_config.get("policy", {}).get("sequence_packing", {}).get(
+         "enabled", False
+     )
+     if "total_flops" in train_results and not packing_enabled:
