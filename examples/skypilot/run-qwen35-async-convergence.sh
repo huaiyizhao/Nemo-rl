@@ -67,6 +67,7 @@ export TRITON_CACHE_DIR="${NEMO_TRITON_CACHE_DIR:-${NEMO_STORAGE_ROOT}/triton}"
 export VLLM_CACHE_ROOT="${NEMO_VLLM_CACHE_ROOT:-${NEMO_STORAGE_ROOT}/vllm}"
 export WANDB_CACHE_DIR="${NEMO_WANDB_CACHE_DIR:-${NEMO_STORAGE_ROOT}/wandb/cache}"
 export WANDB_DATA_DIR="${NEMO_WANDB_DATA_DIR:-${NEMO_STORAGE_ROOT}/wandb/data}"
+export NRL_VLLM_ASYNC_TIMEOUT_SECONDS="${NRL_VLLM_ASYNC_TIMEOUT_SECONDS:-1200}"
 
 cd "${NEMO_ROOT}"
 if ! "${NEMO_RAY}" status --address="${NEMO_RAY_ADDRESS}" >/dev/null 2>&1; then
@@ -79,10 +80,11 @@ echo "nofile soft limit: $(ulimit -Sn)"
 echo "Code root: ${NEMO_ROOT}"
 echo "Mode: async non-colocated GRPO"
 echo "Resources: 4 training GPUs + 4 rollout GPUs"
-echo "Parallelism: policy TP=2, DP=2; vLLM TP=2 (2 replicas)"
+echo "Parallelism: policy TP=2, DP=2; vLLM TP=1 (4 replicas)"
 echo "Rollout/train batch: 128 prompts x 16 generations = 2048 trajectories/step"
 echo "Train batch: global = 512; train/logprob micro = 8; grad accumulation = 32; optimizer updates/step = 4"
 echo "Off-policy guard: max trajectory age = 1; token IS correction = TIS(max=2)"
+echo "Async vLLM result timeout: ${NRL_VLLM_ASYNC_TIMEOUT_SECONDS}s"
 echo "Validation: step 0, every ${VAL_PERIOD} steps, and final step"
 echo "Max steps: ${MAX_STEPS}"
 echo "Storage: ${NEMO_STORAGE_ROOT}"
@@ -106,7 +108,7 @@ exec "${NEMO_PYTHON}" examples/run_grpo.py \
   policy.generation.vllm_cfg.async_engine=true \
   policy.generation.vllm_cfg.enforce_eager=true \
   policy.generation.vllm_cfg.gpu_memory_utilization=0.85 \
-  policy.generation.vllm_cfg.tensor_parallel_size=2 \
+  policy.generation.vllm_cfg.tensor_parallel_size=1 \
   policy.megatron_cfg.tensor_model_parallel_size=2 \
   policy.make_sequence_length_divisible_by=2 \
   policy.train_global_batch_size=512 \
