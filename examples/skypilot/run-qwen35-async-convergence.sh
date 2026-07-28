@@ -83,7 +83,7 @@ echo "Resources: 4 training GPUs + 4 rollout GPUs"
 echo "Parallelism: policy TP=2, DP=2; vLLM TP=1 (4 replicas)"
 echo "Rollout/train batch: 128 prompts x 16 generations = 2048 trajectories/step"
 echo "Train batch: global = 512; train/logprob micro = 8; grad accumulation = 32; optimizer updates/step = 4"
-echo "Off-policy guard: max trajectory age = 1; token IS correction = disabled"
+echo "Off-policy guard: max trajectory age = 1; token IS correction = enabled without TIS truncation"
 echo "Async vLLM result timeout: ${NRL_VLLM_ASYNC_TIMEOUT_SECONDS}s"
 echo "Validation: step 0, every ${VAL_PERIOD} steps, and final step"
 echo "Max steps: ${MAX_STEPS}"
@@ -116,8 +116,11 @@ exec "${NEMO_PYTHON}" examples/run_grpo.py \
   policy.logprob_batch_size=8 \
   policy.megatron_cfg.optimizer.lr=1.0e-6 \
   policy.megatron_cfg.optimizer.min_lr=1.0e-7 \
-  loss_fn.use_importance_sampling_correction=false \
+  loss_fn.use_importance_sampling_correction=true \
   loss_fn.force_on_policy_ratio=false \
+  loss_fn.truncated_importance_sampling_type=null \
+  loss_fn.truncated_importance_sampling_ratio=null \
+  loss_fn.truncated_importance_sampling_ratio_min=null \
   logger.log_dir="${LOG_DIR}" \
   logger.wandb_enabled=true \
   logger.tensorboard_enabled=true \
